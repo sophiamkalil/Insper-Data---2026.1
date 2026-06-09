@@ -65,6 +65,21 @@ class Obligation(Base):
     condition_canonical = Column(String(255), nullable=True)
     condition_status = Column(String(50), nullable=True, default="pendente")
 
+    obligation_code = Column(String(20), nullable=True, index=True)
+    contract_phase = Column(Text, nullable=True)
+    trigger_category = Column(Text, nullable=True)
+    compliance_logic = Column(String(50), nullable=True)
+    trigger_source = Column(Text, nullable=True)
+    internal_inputs = Column(Text, nullable=True)
+    external_inputs = Column(Text, nullable=True)
+    depends_on_clauses = Column(Text, nullable=True)
+    is_input_for_clauses = Column(Text, nullable=True)
+    deadline_type = Column(String(50), nullable=True)
+    deadline_value = Column(Text, nullable=True)
+    deadline_text = Column(Text, nullable=True)
+    expected_output = Column(Text, nullable=True)
+    interpretive_notes = Column(Text, nullable=True)
+
     created_at = Column(
         DateTime,
         server_default=func.now(),

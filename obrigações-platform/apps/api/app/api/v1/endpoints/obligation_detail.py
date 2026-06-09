@@ -44,6 +44,9 @@ def _tem_lembrete_em_payload(payload: ObligationUpdateRequest) -> bool:
     )
 
 
+_CONTINUAS = {"contínuo"}
+
+
 def _validar_email_para_lembrete(
     email_enabled: bool,
     email_destino: str | None,
@@ -98,16 +101,27 @@ def update_obligation(
         else obligation.email_destino
     )
 
-    _validar_email_para_lembrete(
-        email_enabled=new_email_enabled,
-        email_destino=new_email_destino,
-        tem_lembrete=_tem_lembrete_em_payload(payload) or bool(obligation.recurrence_mode or obligation.manual_reminder_at),
-    )
+    is_continua = (obligation.recurrence or "").strip().lower() in _CONTINUAS
+    if not is_continua:
+        _validar_email_para_lembrete(
+            email_enabled=new_email_enabled,
+            email_destino=new_email_destino,
+            tem_lembrete=_tem_lembrete_em_payload(payload) or bool(obligation.recurrence_mode or obligation.manual_reminder_at),
+        )
 
     old_status = obligation.status
     status_changed = False
 
     if payload.status is not None and payload.status != obligation.status:
+        if (
+            payload.status == "completed"
+            and (obligation.trigger_family or "").strip().lower() == "eventual"
+            and (obligation.condition_status or "").strip().lower() != "cumprida"
+        ):
+            raise HTTPException(
+                status_code=400,
+                detail="A condição de ativação desta obrigação ainda não foi cumprida.",
+            )
         obligation.status = payload.status
         status_changed = True
 

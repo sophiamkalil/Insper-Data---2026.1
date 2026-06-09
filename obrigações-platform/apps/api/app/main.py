@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.v1.router import api_router
 from app.db.base import Base
 from app.db.session import engine
-from app.models import contract, obligation, status_history  # noqa: F401
+from app.models import contract, obligation, settings, status_history  # noqa: F401
 from app.services.scheduler import start_email_scheduler, stop_email_scheduler
 
 

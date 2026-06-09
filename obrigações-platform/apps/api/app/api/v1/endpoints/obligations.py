@@ -49,6 +49,7 @@ def list_obligations(
     db: Session = Depends(get_db),
     q: str | None = None,
     status: str | None = None,
+    recurrence: str | None = None,
     skip: int = 0,
     limit: int = Query(default=15, le=100),
 ):
@@ -72,6 +73,23 @@ def list_obligations(
 
     if status and status != "all":
         query = query.filter(Obligation.status == status)
+
+    if recurrence:
+        _MAPA_RECORRENCIA = {
+            "Contínua": ["Contínua", "Continua", "Contínuo", "Continuo"],
+            "Pontual": ["Pontual", "pontual"],
+            "Eventual": ["Eventual", "Eventual (Sob Condição)", "Eventual (Sob Condicao)"],
+            "Periódica - Mensal": ["Periódica - Mensal", "Periodica - Mensal", "Mensal"],
+            "Periódica - Anual": ["Periódica - Anual", "Periodica - Anual", "Anual"],
+            "Trimestral": ["Trimestral"],
+            "Semestral": ["Semestral"],
+            "Única": ["Única", "Unica"],
+            "Encerramento da Concessão": ["Encerramento da Concessão", "Encerramento daConcessão", "Encerramento da Concessao"],
+            "Periódica - Conforme Vigência": ["Periódica - Conforme Vigência", "Periodica - Conforme Vigencia", "Periódica - ConformeVigênci"],
+            "Não definido": ["Não definido"],
+        }
+        valores = _MAPA_RECORRENCIA.get(recurrence, [recurrence])
+        query = query.filter(Obligation.recurrence.in_(valores))
 
     total = query.count()
 

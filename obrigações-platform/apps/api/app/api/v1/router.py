@@ -5,6 +5,7 @@ from app.api.v1.endpoints.health import router as health_router
 from app.api.v1.endpoints.imports import router as imports_router
 from app.api.v1.endpoints.obligation_detail import router as obligation_detail_router
 from app.api.v1.endpoints.obligations import router as obligations_router
+from app.api.v1.endpoints.settings import router as settings_router
 
 api_router = APIRouter()
 
@@ -17,3 +18,4 @@ api_router.include_router(
     prefix="/obligations",
     tags=["Obligation Detail"],
 )
+api_router.include_router(settings_router, prefix="/settings", tags=["Settings"])

@@ -46,6 +46,21 @@ class ObligationRead(BaseModel):
     condition_canonical: str | None = None
     condition_status: str | None = None
 
+    obligation_code: str | None = None
+    contract_phase: str | None = None
+    trigger_category: str | None = None
+    compliance_logic: str | None = None
+    trigger_source: str | None = None
+    internal_inputs: str | None = None
+    external_inputs: str | None = None
+    depends_on_clauses: str | None = None
+    is_input_for_clauses: str | None = None
+    deadline_type: str | None = None
+    deadline_value: str | None = None
+    deadline_text: str | None = None
+    expected_output: str | None = None
+    interpretive_notes: str | None = None
+
     created_at: datetime
     updated_at: datetime
 
