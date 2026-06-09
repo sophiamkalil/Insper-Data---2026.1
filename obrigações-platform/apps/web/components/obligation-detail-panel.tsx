@@ -18,6 +18,16 @@ type Props = {
   history: ObligationStatusHistory[];
 };
 
+function formatDateTime(dateString: string | null) {
+  if (!dateString) return "-";
+  return new Date(dateString).toLocaleString("pt-BR");
+}
+
+function formatDate(dateString: string | null) {
+  if (!dateString) return "-";
+  return new Date(dateString).toLocaleDateString("pt-BR");
+}
+
 export function ObligationDetailPanel({ obligation, history }: Props) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -28,19 +38,40 @@ export function ObligationDetailPanel({ obligation, history }: Props) {
 
   const [emailEnabled, setEmailEnabled] = useState(obligation.email_enabled);
   const [emailDestino, setEmailDestino] = useState(obligation.email_destino ?? "");
-  const [dataEnvioEmail, setDataEnvioEmail] = useState(
-    obligation.data_envio_email ? obligation.data_envio_email.slice(0, 10) : ""
+
+  const [manualReminderAtDate, setManualReminderAtDate] = useState(
+    obligation.manual_reminder_at ? obligation.manual_reminder_at.slice(0, 10) : ""
+  );
+  const [manualReminderAtTime, setManualReminderAtTime] = useState(
+    obligation.manual_reminder_at ? obligation.manual_reminder_at.slice(11, 16) : "08:00"
+  );
+
+  const [recurrenceMode, setRecurrenceMode] = useState(
+    obligation.recurrence_mode ?? ""
+  );
+  const [recurrenceTime, setRecurrenceTime] = useState(
+    obligation.recurrence_time ?? "08:00"
+  );
+  const [recurrenceIntervalDays, setRecurrenceIntervalDays] = useState(
+    obligation.recurrence_interval_days ? String(obligation.recurrence_interval_days) : ""
+  );
+  const [recurrenceWeekday, setRecurrenceWeekday] = useState(
+    obligation.recurrence_weekday !== null && obligation.recurrence_weekday !== undefined
+      ? String(obligation.recurrence_weekday)
+      : ""
+  );
+  const [recurrenceDayOfMonth, setRecurrenceDayOfMonth] = useState(
+    obligation.recurrence_day_of_month ? String(obligation.recurrence_day_of_month) : ""
+  );
+  const [recurrenceMonth, setRecurrenceMonth] = useState(
+    obligation.recurrence_month ? String(obligation.recurrence_month) : ""
   );
 
   const [triggerFamily, setTriggerFamily] = useState(
     obligation.trigger_family ?? ""
   );
-  const [triggerType, setTriggerType] = useState(
-    obligation.trigger_type ?? ""
-  );
-  const [conditionRaw, setConditionRaw] = useState(
-    obligation.condition_raw ?? ""
-  );
+  const [triggerType, setTriggerType] = useState(obligation.trigger_type ?? "");
+  const [conditionRaw, setConditionRaw] = useState(obligation.condition_raw ?? "");
   const [conditionCanonical, setConditionCanonical] = useState(
     obligation.condition_canonical ?? ""
   );
@@ -58,27 +89,52 @@ export function ObligationDetailPanel({ obligation, history }: Props) {
     return "Pendente";
   }, [status]);
 
-  const triggerLabel = useMemo(() => {
-    if (triggerFamily === "eventual") return "Eventual";
-    if (triggerFamily === "periodica") return "Periódica";
-    if (triggerFamily === "pontual") return "Pontual";
-    if (triggerFamily === "permanente") return "Permanente";
+  const recurrenceLabel = useMemo(() => {
+    if (recurrenceMode === "weekly") return "Semanal";
+    if (recurrenceMode === "monthly") return "Mensal";
+    if (recurrenceMode === "yearly") return "Anual";
+    if (recurrenceMode === "manual_days") return "Manual por dias";
     return "-";
-  }, [triggerFamily]);
+  }, [recurrenceMode]);
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
     setMessage(null);
 
+    const temLembrete =
+      !!recurrenceMode ||
+      !!manualReminderAtDate ||
+      !!obligation.manual_reminder_at;
+
+    if (temLembrete && !emailDestino) {
+      setError("Preencha o email antes de salvar a recorrência ou o lembrete manual.");
+      return;
+    }
+
     try {
+      const manualReminderAt =
+        manualReminderAtDate && manualReminderAtTime
+          ? `${manualReminderAtDate}T${manualReminderAtTime}:00`
+          : null;
+
       await updateObligation(obligation.id, {
         status,
         observations,
         note: note || undefined,
         email_enabled: emailEnabled,
         email_destino: emailDestino || null,
-        data_envio_email: dataEnvioEmail ? `${dataEnvioEmail}T00:00:00` : null,
+        manual_reminder_at: manualReminderAt,
+        recurrence_mode: recurrenceMode || null,
+        recurrence_time: recurrenceTime || null,
+        recurrence_interval_days: recurrenceIntervalDays
+          ? Number(recurrenceIntervalDays)
+          : null,
+        recurrence_weekday: recurrenceWeekday ? Number(recurrenceWeekday) : null,
+        recurrence_day_of_month: recurrenceDayOfMonth
+          ? Number(recurrenceDayOfMonth)
+          : null,
+        recurrence_month: recurrenceMonth ? Number(recurrenceMonth) : null,
         trigger_family: triggerFamily || null,
         trigger_type: triggerType || null,
         condition_raw: conditionRaw || null,
@@ -119,6 +175,7 @@ export function ObligationDetailPanel({ obligation, history }: Props) {
 
     try {
       await sendObligationEmailNow(obligation.id);
+
       setEmailMessage("Email enviado com sucesso.");
       startTransition(() => {
         router.refresh();
@@ -144,7 +201,7 @@ export function ObligationDetailPanel({ obligation, history }: Props) {
             {obligation.item_number || "-"}
           </p>
           <p>
-            <span className="text-zinc-500">Recorrência:</span>{" "}
+            <span className="text-zinc-500">Recorrência textual:</span>{" "}
             {obligation.recurrence || "-"}
           </p>
           <p>
@@ -160,8 +217,28 @@ export function ObligationDetailPanel({ obligation, history }: Props) {
             {statusLabel}
           </p>
           <p>
-            <span className="text-zinc-500">Tipo de gatilho:</span>{" "}
-            {triggerLabel}
+            <span className="text-zinc-500">Tipo de recorrência:</span>{" "}
+            {recurrenceLabel}
+          </p>
+          <p>
+            <span className="text-zinc-500">Próximo lembrete recorrente:</span>{" "}
+            {formatDateTime(obligation.next_recurrence_at)}
+          </p>
+          <p>
+            <span className="text-zinc-500">Próximo lembrete real:</span>{" "}
+            {formatDateTime(obligation.next_reminder_at)}
+          </p>
+          <p>
+            <span className="text-zinc-500">Último envio:</span>{" "}
+            {formatDateTime(obligation.last_email_sent_at)}
+          </p>
+          <p>
+            <span className="text-zinc-500">Lembrete manual:</span>{" "}
+            {formatDateTime(obligation.manual_reminder_at)}
+          </p>
+          <p>
+            <span className="text-zinc-500">Lembrete manual enviado em:</span>{" "}
+            {formatDateTime(obligation.manual_reminder_sent_at)}
           </p>
         </div>
       </section>
@@ -223,6 +300,163 @@ export function ObligationDetailPanel({ obligation, history }: Props) {
           </label>
 
           <div className="rounded-2xl border border-zinc-800 bg-zinc-950 p-4">
+            <h3 className="mb-4 text-base font-semibold">Recorrência</h3>
+
+            <div className="grid gap-4 md:grid-cols-2">
+              <label className="grid gap-2 text-sm text-zinc-300">
+                <span>Tipo</span>
+                <select
+                  value={recurrenceMode}
+                  onChange={(event) => setRecurrenceMode(event.target.value)}
+                  className="rounded-xl border border-zinc-800 bg-zinc-900 px-4 py-3 text-sm text-zinc-100 outline-none"
+                >
+                  <option value="">Sem recorrência</option>
+                  <option value="weekly">Semanal</option>
+                  <option value="monthly">Mensal</option>
+                  <option value="yearly">Anual</option>
+                  <option value="manual_days">Manual por dias</option>
+                </select>
+              </label>
+
+              <label className="grid gap-2 text-sm text-zinc-300">
+                <span>Horário da recorrência</span>
+                <input
+                  type="time"
+                  value={recurrenceTime}
+                  onChange={(event) => setRecurrenceTime(event.target.value)}
+                  className="rounded-xl border border-zinc-800 bg-zinc-900 px-4 py-3 text-sm text-zinc-100 outline-none"
+                />
+              </label>
+
+              {recurrenceMode === "manual_days" ? (
+                <label className="grid gap-2 text-sm text-zinc-300">
+                  <span>A cada quantos dias</span>
+                  <input
+                    type="number"
+                    min="1"
+                    value={recurrenceIntervalDays}
+                    onChange={(event) =>
+                      setRecurrenceIntervalDays(event.target.value)
+                    }
+                    className="rounded-xl border border-zinc-800 bg-zinc-900 px-4 py-3 text-sm text-zinc-100 outline-none"
+                  />
+                </label>
+              ) : null}
+
+              {recurrenceMode === "weekly" ? (
+                <label className="grid gap-2 text-sm text-zinc-300">
+                  <span>Dia da semana</span>
+                  <select
+                    value={recurrenceWeekday}
+                    onChange={(event) => setRecurrenceWeekday(event.target.value)}
+                    className="rounded-xl border border-zinc-800 bg-zinc-900 px-4 py-3 text-sm text-zinc-100 outline-none"
+                  >
+                    <option value="">Escolher</option>
+                    <option value="0">Segunda</option>
+                    <option value="1">Terça</option>
+                    <option value="2">Quarta</option>
+                    <option value="3">Quinta</option>
+                    <option value="4">Sexta</option>
+                    <option value="5">Sábado</option>
+                    <option value="6">Domingo</option>
+                  </select>
+                </label>
+              ) : null}
+
+              {recurrenceMode === "monthly" ? (
+                <label className="grid gap-2 text-sm text-zinc-300">
+                  <span>Dia do mês</span>
+                  <input
+                    type="number"
+                    min="1"
+                    max="31"
+                    value={recurrenceDayOfMonth}
+                    onChange={(event) =>
+                      setRecurrenceDayOfMonth(event.target.value)
+                    }
+                    className="rounded-xl border border-zinc-800 bg-zinc-900 px-4 py-3 text-sm text-zinc-100 outline-none"
+                  />
+                </label>
+              ) : null}
+
+              {recurrenceMode === "yearly" ? (
+                <>
+                  <label className="grid gap-2 text-sm text-zinc-300">
+                    <span>Mês</span>
+                    <select
+                      value={recurrenceMonth}
+                      onChange={(event) => setRecurrenceMonth(event.target.value)}
+                      className="rounded-xl border border-zinc-800 bg-zinc-900 px-4 py-3 text-sm text-zinc-100 outline-none"
+                    >
+                      <option value="">Escolher</option>
+                      <option value="1">Janeiro</option>
+                      <option value="2">Fevereiro</option>
+                      <option value="3">Março</option>
+                      <option value="4">Abril</option>
+                      <option value="5">Maio</option>
+                      <option value="6">Junho</option>
+                      <option value="7">Julho</option>
+                      <option value="8">Agosto</option>
+                      <option value="9">Setembro</option>
+                      <option value="10">Outubro</option>
+                      <option value="11">Novembro</option>
+                      <option value="12">Dezembro</option>
+                    </select>
+                  </label>
+
+                  <label className="grid gap-2 text-sm text-zinc-300">
+                    <span>Dia do mês</span>
+                    <input
+                      type="number"
+                      min="1"
+                      max="31"
+                      value={recurrenceDayOfMonth}
+                      onChange={(event) =>
+                        setRecurrenceDayOfMonth(event.target.value)
+                      }
+                      className="rounded-xl border border-zinc-800 bg-zinc-900 px-4 py-3 text-sm text-zinc-100 outline-none"
+                    />
+                  </label>
+                </>
+              ) : null}
+            </div>
+
+            <p className="mt-3 text-xs text-zinc-500">
+              O próximo lembrete recorrente é calculado com base no tipo escolhido e no horário definido.
+            </p>
+          </div>
+
+          <div className="rounded-2xl border border-zinc-800 bg-zinc-950 p-4">
+            <h3 className="mb-4 text-base font-semibold">Lembrete manual</h3>
+
+            <div className="grid gap-4 md:grid-cols-2">
+              <label className="grid gap-2 text-sm text-zinc-300">
+                <span>Data manual</span>
+                <input
+                  type="date"
+                  value={manualReminderAtDate}
+                  onChange={(e) => setManualReminderAtDate(e.target.value)}
+                  className="rounded-xl border border-zinc-800 bg-zinc-900 px-4 py-3 text-sm text-zinc-100 outline-none"
+                />
+              </label>
+
+              <label className="grid gap-2 text-sm text-zinc-300">
+                <span>Hora manual</span>
+                <input
+                  type="time"
+                  value={manualReminderAtTime}
+                  onChange={(e) => setManualReminderAtTime(e.target.value)}
+                  className="rounded-xl border border-zinc-800 bg-zinc-900 px-4 py-3 text-sm text-zinc-100 outline-none"
+                />
+              </label>
+            </div>
+
+            <p className="mt-3 text-xs text-zinc-500">
+              Esse lembrete é pontual e não apaga a recorrência.
+            </p>
+          </div>
+
+          <div className="rounded-2xl border border-zinc-800 bg-zinc-950 p-4">
             <h3 className="mb-4 text-base font-semibold">Condição acionadora</h3>
 
             <div className="grid gap-4 md:grid-cols-2">
@@ -234,10 +468,11 @@ export function ObligationDetailPanel({ obligation, history }: Props) {
                   className="rounded-xl border border-zinc-800 bg-zinc-900 px-4 py-3 text-sm text-zinc-100 outline-none"
                 >
                   <option value="">Sem definir</option>
-                  <option value="pontual">Pontual</option>
-                  <option value="periodica">Periódica</option>
+                  <option value="weekly">Semanal</option>
+                  <option value="monthly">Mensal</option>
+                  <option value="yearly">Anual</option>
+                  <option value="manual_days">Manual por dias</option>
                   <option value="eventual">Eventual</option>
-                  <option value="permanente">Permanente</option>
                 </select>
               </label>
 
@@ -288,12 +523,12 @@ export function ObligationDetailPanel({ obligation, history }: Props) {
             </div>
 
             <p className="mt-3 text-xs text-zinc-500">
-              Quando o tipo for “eventual”, a obrigação só deve disparar após a condição ser marcada como cumprida.
+              Quando o tipo for “eventual”, o lembrete só dispara após a condição ser marcada como cumprida.
             </p>
           </div>
 
           <div className="rounded-2xl border border-zinc-800 bg-zinc-950 p-4">
-            <h3 className="mb-4 text-base font-semibold">Lembrete por email</h3>
+            <h3 className="mb-4 text-base font-semibold">Email</h3>
 
             <div className="grid gap-4 md:grid-cols-2">
               <label className="flex items-center gap-3 text-sm text-zinc-300 md:col-span-2">
@@ -305,7 +540,7 @@ export function ObligationDetailPanel({ obligation, history }: Props) {
                 <span>Ativar lembrete por email</span>
               </label>
 
-              <label className="grid gap-2 text-sm text-zinc-300">
+              <label className="grid gap-2 text-sm text-zinc-300 md:col-span-2">
                 <span>Email do destinatário</span>
                 <input
                   type="email"
@@ -316,22 +551,17 @@ export function ObligationDetailPanel({ obligation, history }: Props) {
                 />
               </label>
 
-              <label className="grid gap-2 text-sm text-zinc-300">
-                <span>Data do lembrete</span>
-                <input
-                  type="date"
-                  value={dataEnvioEmail}
-                  onChange={(event) => setDataEnvioEmail(event.target.value)}
-                  className="rounded-xl border border-zinc-800 bg-zinc-900 px-4 py-3 text-sm text-zinc-100 outline-none"
-                />
-              </label>
+              <div className="rounded-xl border border-zinc-800 bg-zinc-900 px-4 py-3 text-sm text-zinc-300 md:col-span-2">
+                <span className="text-zinc-500">Próximo lembrete real:</span>{" "}
+                {formatDateTime(obligation.next_reminder_at)}
+              </div>
             </div>
 
             <div className="mt-4 flex flex-wrap items-center gap-3">
               <button
                 type="button"
                 onClick={handleSendEmailNow}
-                className="rounded-xl border border-zinc-700 bg-zinc-900 px-4 py-2 text-sm font-medium text-zinc-100 transition hover:bg-zinc-800"
+                className="rounded-xl border border-zinc-700 bg-zinc-900 px-4 py-3 text-sm font-medium text-zinc-100 transition hover:bg-zinc-800"
               >
                 Enviar agora
               </button>
@@ -343,9 +573,7 @@ export function ObligationDetailPanel({ obligation, history }: Props) {
 
               <div className="text-sm text-zinc-400">
                 <span className="text-zinc-500">Último envio:</span>{" "}
-                {obligation.last_email_sent_at
-                  ? new Date(obligation.last_email_sent_at).toLocaleString("pt-BR")
-                  : "-"}
+                {formatDateTime(obligation.last_email_sent_at)}
               </div>
             </div>
 

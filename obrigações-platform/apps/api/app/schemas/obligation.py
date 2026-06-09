@@ -23,9 +23,22 @@ class ObligationRead(BaseModel):
 
     email_enabled: bool
     email_destino: str | None = None
-    data_envio_email: datetime | None = None
-    status_envio: str | None = None
+
+    manual_reminder_at: datetime | None = None
+    manual_reminder_sent_at: datetime | None = None
+
+    recurrence_mode: str | None = None
+    recurrence_time: str | None = None
+    recurrence_interval_days: int | None = None
+    recurrence_weekday: int | None = None
+    recurrence_day_of_month: int | None = None
+    recurrence_month: int | None = None
+
+    next_recurrence_at: datetime | None = None
+    next_reminder_at: datetime | None = None
     last_email_sent_at: datetime | None = None
+
+    status_envio: str | None = None
 
     trigger_family: str | None = None
     trigger_type: str | None = None
@@ -51,7 +64,15 @@ class ObligationCreateRequest(BaseModel):
 
     email_enabled: bool = False
     email_destino: str | None = None
-    data_envio_email: datetime | None = None
+
+    manual_reminder_at: datetime | None = None
+
+    recurrence_mode: str | None = None
+    recurrence_time: str | None = None
+    recurrence_interval_days: int | None = None
+    recurrence_weekday: int | None = None
+    recurrence_day_of_month: int | None = None
+    recurrence_month: int | None = None
 
     trigger_family: str | None = None
     trigger_type: str | None = None
@@ -83,7 +104,15 @@ class ObligationUpdateRequest(BaseModel):
 
     email_enabled: bool | None = None
     email_destino: str | None = None
-    data_envio_email: datetime | None = None
+
+    manual_reminder_at: datetime | None = None
+
+    recurrence_mode: str | None = None
+    recurrence_time: str | None = None
+    recurrence_interval_days: int | None = None
+    recurrence_weekday: int | None = None
+    recurrence_day_of_month: int | None = None
+    recurrence_month: int | None = None
 
     trigger_family: str | None = None
     trigger_type: str | None = None

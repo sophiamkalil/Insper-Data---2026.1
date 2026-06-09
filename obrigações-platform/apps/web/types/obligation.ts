@@ -13,9 +13,22 @@ export interface Obligation {
 
   email_enabled: boolean;
   email_destino: string | null;
-  data_envio_email: string | null;
-  status_envio: string | null;
+
+  manual_reminder_at: string | null;
+  manual_reminder_sent_at: string | null;
+
+  recurrence_mode: string | null;
+  recurrence_time: string | null;
+  recurrence_interval_days: number | null;
+  recurrence_weekday: number | null;
+  recurrence_day_of_month: number | null;
+  recurrence_month: number | null;
+
+  next_recurrence_at: string | null;
+  next_reminder_at: string | null;
   last_email_sent_at: string | null;
+
+  status_envio: string | null;
 
   trigger_family: string | null;
   trigger_type: string | null;
@@ -61,7 +74,15 @@ export interface UpdateObligationPayload {
 
   email_enabled?: boolean;
   email_destino?: string | null;
-  data_envio_email?: string | null;
+
+  manual_reminder_at?: string | null;
+
+  recurrence_mode?: string | null;
+  recurrence_time?: string | null;
+  recurrence_interval_days?: number | null;
+  recurrence_weekday?: number | null;
+  recurrence_day_of_month?: number | null;
+  recurrence_month?: number | null;
 
   trigger_family?: string | null;
   trigger_type?: string | null;
@@ -82,7 +103,15 @@ export interface ObligationCreateRequest {
 
   email_enabled?: boolean;
   email_destino?: string | null;
-  data_envio_email?: string | null;
+
+  manual_reminder_at?: string | null;
+
+  recurrence_mode?: string | null;
+  recurrence_time?: string | null;
+  recurrence_interval_days?: number | null;
+  recurrence_weekday?: number | null;
+  recurrence_day_of_month?: number | null;
+  recurrence_month?: number | null;
 
   trigger_family?: string | null;
   trigger_type?: string | null;

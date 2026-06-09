@@ -90,9 +90,13 @@ export async function deleteObligation(id: number) {
   return response.json();
 }
 
-export async function sendObligationEmailNow(id: number) {
+export async function sendObligationEmailNow(id: number, sendAt?: string | null) {
   const response = await fetch(`${API_URL}/obligations/${id}/send-email`, {
     method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(sendAt ? { send_at: sendAt } : {}),
   });
 
   if (!response.ok) {

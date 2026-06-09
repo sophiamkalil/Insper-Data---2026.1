@@ -39,9 +39,25 @@ class Obligation(Base):
 
     email_enabled = Column(Boolean, nullable=False, default=False)
     email_destino = Column(String(255), nullable=True)
-    data_envio_email = Column(DateTime, nullable=True)
-    status_envio = Column(String(50), nullable=True)
+
+    # lembrete manual / pontual
+    manual_reminder_at = Column(DateTime, nullable=True)
+    manual_reminder_sent_at = Column(DateTime, nullable=True)
+
+    # recorrência
+    recurrence_mode = Column(String(20), nullable=True)
+    recurrence_time = Column(String(5), nullable=True)
+    recurrence_interval_days = Column(Integer, nullable=True)
+    recurrence_weekday = Column(Integer, nullable=True)
+    recurrence_day_of_month = Column(Integer, nullable=True)
+    recurrence_month = Column(Integer, nullable=True)
+
+    # resultado final calculado
+    next_recurrence_at = Column(DateTime, nullable=True)
+    next_reminder_at = Column(DateTime, nullable=True)
     last_email_sent_at = Column(DateTime, nullable=True)
+
+    status_envio = Column(String(50), nullable=True)
 
     trigger_family = Column(String(50), nullable=True)
     trigger_type = Column(String(100), nullable=True)

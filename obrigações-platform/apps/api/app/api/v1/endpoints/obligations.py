@@ -1,4 +1,6 @@
-from fastapi import APIRouter, Depends, Query
+from datetime import datetime
+
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
@@ -9,8 +11,37 @@ from app.schemas.obligation import (
     ObligationListResponse,
     ObligationRead,
 )
+from app.services.recurrence import (
+    calculate_next_recurrence_at,
+    calculate_next_reminder_at,
+)
 
 router = APIRouter()
+
+
+def _tem_lembrete(payload: ObligationCreateRequest) -> bool:
+    return any(
+        [
+            payload.manual_reminder_at is not None,
+            payload.recurrence_mode is not None,
+            payload.recurrence_interval_days is not None,
+            payload.recurrence_weekday is not None,
+            payload.recurrence_day_of_month is not None,
+            payload.recurrence_month is not None,
+        ]
+    )
+
+
+def _validar_email_para_lembrete(
+    email_enabled: bool,
+    email_destino: str | None,
+    tem_lembrete: bool,
+) -> None:
+    if tem_lembrete and (not email_enabled or not email_destino):
+        raise HTTPException(
+            status_code=400,
+            detail="Preencha o email antes de salvar uma recorrência ou lembrete manual.",
+        )
 
 
 @router.get("/", response_model=ObligationListResponse)
@@ -64,6 +95,12 @@ def create_obligation(
     payload: ObligationCreateRequest,
     db: Session = Depends(get_db),
 ):
+    _validar_email_para_lembrete(
+        email_enabled=payload.email_enabled,
+        email_destino=payload.email_destino,
+        tem_lembrete=_tem_lembrete(payload),
+    )
+
     obligation = Obligation(
         contract_id=payload.contract_id,
         document_name=payload.document_name,
@@ -75,12 +112,27 @@ def create_obligation(
         status=payload.status,
         email_enabled=payload.email_enabled,
         email_destino=payload.email_destino,
-        data_envio_email=payload.data_envio_email,
+        manual_reminder_at=payload.manual_reminder_at,
+        recurrence_mode=payload.recurrence_mode,
+        recurrence_time=payload.recurrence_time,
+        recurrence_interval_days=payload.recurrence_interval_days,
+        recurrence_weekday=payload.recurrence_weekday,
+        recurrence_day_of_month=payload.recurrence_day_of_month,
+        recurrence_month=payload.recurrence_month,
         trigger_family=payload.trigger_family,
         trigger_type=payload.trigger_type,
         condition_raw=payload.condition_raw,
         condition_canonical=payload.condition_canonical,
         condition_status=payload.condition_status,
+    )
+
+    obligation.next_recurrence_at = calculate_next_recurrence_at(
+        obligation,
+        reference_datetime=datetime.now(),
+    )
+    obligation.next_reminder_at = calculate_next_reminder_at(
+        obligation,
+        reference_datetime=datetime.now(),
     )
 
     db.add(obligation)
