@@ -33,14 +33,16 @@ def build_clause_index(pdf_path: str) -> dict[str, int]:
     """
     index: dict[str, int] = {}
     patterns_numeric = [
-        r'(?m)^(\d+\.\d+(?:\.\d+)*)\s*[.\s]',
-        r'(?m)^\s{1,4}(\d+\.\d+(?:\.\d+)*)\s*[.\s]',
+        r'(?m)^(\d+\.\d+(?:\.\d+)*)\s*[.,\s]',
+        r'(?m)^\s{1,4}(\d+\.\d+(?:\.\d+)*)\s*[.,\s]',
     ]
-    pattern_artigo = r'(?m)^Art(?:igo)?\.?\s{0,2}(\d+)(?:[º°])?(?:\s|$|[,.])'
+    pattern_artigo = r'(?m)^Art(?:igo)?\.?\s{0,2}(\d+)(?:[º°])?(?:\s|$|[,.\-])'
 
     with pdfplumber.open(pdf_path) as pdf:
         for page_num, page in enumerate(pdf.pages, start=1):
             text = page.extract_text() or ''
+            # Normaliza linhas com espaço no lugar do ponto: "2 9." → "2.9."
+            text = re.sub(r'(?m)^(\d+)\s+(\d+)\.', r'\1.\2.', text)
             for pattern in patterns_numeric:
                 for m in re.findall(pattern, text):
                     if m not in index:
