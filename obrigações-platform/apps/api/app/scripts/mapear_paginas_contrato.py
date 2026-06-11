@@ -1,6 +1,8 @@
 """
-Mapeia automaticamente item_number das obrigações para a página do PDF do contrato.
+Mapeia automaticamente item_number das obrigações para a página do PDF correspondente.
 Execução única: python -m app.scripts.mapear_paginas_contrato
+
+Processa todos os documentos com PDF disponível em ~/front-concessoes/public/.
 """
 import os
 import re
@@ -8,18 +10,26 @@ import sqlite3
 
 import pdfplumber
 
-PDF_PATH = os.path.join(os.path.expanduser('~'), 'front-concessoes', 'public', 'contrato.pdf')
+PDF_DIR = os.path.join(os.path.expanduser('~'), 'front-concessoes', 'public')
 DB_PATH = os.path.join(os.path.dirname(__file__), '..', '..', 'dev.db')
+
+DOCUMENTOS_PDF = {
+    'Contrato': 'contrato.pdf',
+    'Anexo 1 - Regulamento da Concessão': 'anexo1.pdf',
+    'Anexo 2 - Plano de Exploração Aeroportuária (PEA)': 'anexo2.pdf',
+    'Anexo 4 - Plano de Transferência Operacional (PTO)': 'anexo4.pdf',
+    'Anexo 5 - Tarifas Aeroportuárias': 'anexo5.pdf',
+    'Anexo 6 - Contrato de Administração de Contas': 'anexo6.pdf',
+    'Anexo 8 - Termo de Aceitação e Permissão de Uso de Ativos': 'anexo8.pdf',
+    'Anexo 17 - Caderno de Penalidades': 'anexo17.pdf',
+}
 
 
 def build_clause_index(pdf_path: str) -> dict[str, int]:
     """Retorna {clausula: primeira_pagina}, ex: {"5.3": 22, "11.6": 45}."""
     index: dict[str, int] = {}
-    # Padrões em ordem de confiança (mais específico primeiro)
     patterns = [
-        # Exatamente no início da linha: "5.3." ou "5.3 "
         r'(?m)^(\d+\.\d+(?:\.\d+)*)\s*[.\s]',
-        # Com até 4 espaços de recuo: "  5.3." (itens indentados)
         r'(?m)^\s{1,4}(\d+\.\d+(?:\.\d+)*)\s*[.\s]',
     ]
     with pdfplumber.open(pdf_path) as pdf:
@@ -33,12 +43,6 @@ def build_clause_index(pdf_path: str) -> dict[str, int]:
 
 
 def primary_clause(item_number: str) -> str | None:
-    """Extrai a primeira cláusula numérica de um item_number.
-
-    "11.6 (i) e 35.1"  → "11.6"
-    "12.8.2.2"          → "12.8.2.2"
-    "4. do Apêndice D"  → None
-    """
     if not item_number:
         return None
     m = re.search(r'\d+\.\d+(?:\.\d+)*', item_number)
@@ -46,36 +50,25 @@ def primary_clause(item_number: str) -> str | None:
 
 
 def fallback_clauses(clausula: str) -> list[str]:
-    """Gera cláusulas de fallback mais gerais caso a específica não seja encontrada.
-    "12.8.2.2" → ["12.8.2", "12.8"]
-    """
     parts = clausula.split('.')
-    fallbacks = []
-    for i in range(len(parts) - 1, 1, -1):
-        fallbacks.append('.'.join(parts[:i]))
-    return fallbacks
+    return ['.'.join(parts[:i]) for i in range(len(parts) - 1, 1, -1)]
 
 
-def main():
-    pdf_path = os.path.abspath(PDF_PATH)
-    db_path = os.path.abspath(DB_PATH)
+def processar_documento(doc_name: str, pdf_filename: str, conn: sqlite3.Connection) -> None:
+    pdf_path = os.path.abspath(os.path.join(PDF_DIR, pdf_filename))
 
     if not os.path.exists(pdf_path):
-        print(f"PDF não encontrado: {pdf_path}")
-        return
-    if not os.path.exists(db_path):
-        print(f"Banco não encontrado: {db_path}")
+        print(f'  [ignorado] PDF não encontrado: {pdf_path}')
         return
 
-    print(f"Lendo PDF: {pdf_path}")
+    print(f'  Lendo PDF: {pdf_path}')
     index = build_clause_index(pdf_path)
-    print(f"Cláusulas encontradas no PDF: {len(index)}")
+    print(f'  Cláusulas encontradas: {len(index)}')
 
-    conn = sqlite3.connect(db_path)
     cur = conn.cursor()
-
     obrigacoes = cur.execute(
-        'SELECT id, item_number FROM obligations WHERE item_number IS NOT NULL'
+        'SELECT id, item_number FROM obligations WHERE item_number IS NOT NULL AND document_name = ?',
+        (doc_name,)
     ).fetchall()
 
     atualizados = nao_encontrados = 0
@@ -96,27 +89,35 @@ def main():
                     break
 
         if pagina:
-            cur.execute(
-                'UPDATE obligations SET pagina_contrato = ? WHERE id = ?',
-                (pagina, oid)
-            )
+            cur.execute('UPDATE obligations SET pagina_contrato = ? WHERE id = ?', (pagina, oid))
             atualizados += 1
         else:
             nao_encontrados += 1
             nao_encontrados_lista.append(item_num)
 
     conn.commit()
-    conn.close()
-
-    print(f"\nResultado:")
-    print(f"  Atualizados:    {atualizados}")
-    print(f"  Não encontrados: {nao_encontrados}")
+    print(f'  Atualizados: {atualizados} | Não encontrados: {nao_encontrados}')
     if nao_encontrados_lista:
-        print(f"\nItens sem página mapeada (defina manualmente no detalhe da obrigação):")
-        for item in sorted(set(nao_encontrados_lista))[:20]:
-            print(f"  {item}")
-        if len(nao_encontrados_lista) > 20:
-            print(f"  ... e mais {len(nao_encontrados_lista) - 20}")
+        for item in sorted(set(nao_encontrados_lista))[:10]:
+            print(f'    - {item}')
+        if len(nao_encontrados_lista) > 10:
+            print(f'    ... e mais {len(nao_encontrados_lista) - 10}')
+
+
+def main():
+    db_path = os.path.abspath(DB_PATH)
+    if not os.path.exists(db_path):
+        print(f'Banco não encontrado: {db_path}')
+        return
+
+    conn = sqlite3.connect(db_path)
+
+    for doc_name, pdf_filename in DOCUMENTOS_PDF.items():
+        print(f'\n[{doc_name}]')
+        processar_documento(doc_name, pdf_filename, conn)
+
+    conn.close()
+    print('\nMapeamento concluído.')
 
 
 if __name__ == '__main__':
