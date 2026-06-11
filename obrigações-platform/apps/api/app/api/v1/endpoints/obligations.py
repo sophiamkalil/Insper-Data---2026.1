@@ -1,7 +1,7 @@
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import or_
+from sqlalchemy import or_, text
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
@@ -53,6 +53,7 @@ def list_obligations(
     recurrence: str | None = None,
     responsible: str | None = None,
     contract_phase: str | None = None,
+    document_name: str | None = Query(None),
     skip: int = 0,
     limit: int = Query(default=15, le=1000),
 ):
@@ -90,6 +91,9 @@ def list_obligations(
         }
         pattern = _MAPA_FASES.get(contract_phase, f"{contract_phase}%")
         query = query.filter(Obligation.contract_phase.ilike(pattern))
+
+    if document_name:
+        query = query.filter(Obligation.document_name == document_name)
 
     if recurrence:
         _MAPA_RECORRENCIA = {
@@ -185,3 +189,19 @@ def create_obligation(
         db.refresh(obligation)
 
     return obligation
+
+
+@router.post('/reset')
+def reset_all(db: Session = Depends(get_db)):
+    db.execute(text('DELETE FROM obligation_status_history'))
+    db.execute(text(
+        "UPDATE obligations SET"
+        "  status = 'pending',"
+        "  deadline = NULL,"
+        "  condition_status = 'pendente',"
+        "  manual_reminder_at = NULL,"
+        "  last_email_sent_at = NULL"
+    ))
+    db.commit()
+    total = db.execute(text('SELECT COUNT(*) FROM obligations')).scalar()
+    return {'resetadas': total}
