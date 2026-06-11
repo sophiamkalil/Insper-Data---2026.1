@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 logger = logging.getLogger(__name__)
 
 from app.models.obligation import Obligation
+from app.models.settings import AppSettings
 from app.models.status_history import ObligationStatusHistory
 from app.services.email_service import enviar_email
 from app.services.recurrence import (
@@ -20,8 +21,39 @@ from app.services.reminder_rules import (
     should_send_now,
 )
 
-_RECORRENCIAS_CONTINUAS = {"contínuo"}
-_RECORRENCIAS_CONTINUAS_LIST = ["Contínuo"]
+
+def _next_month_date(dt: datetime) -> datetime:
+    if dt.month == 12:
+        return dt.replace(year=dt.year + 1, month=1)
+    return dt.replace(month=dt.month + 1)
+
+
+def _advance_periodico_prazo(obligation: Obligation, settings: AppSettings, agora: datetime) -> None:
+    """Avança next_recurrence_at e recalcula next_reminder_at para periódicas com prazo definido."""
+    nr = obligation.next_recurrence_at
+    if not nr:
+        return
+    rec = obligation.recurrence or ''
+    if rec == 'Periódica - Mensal':
+        ant = getattr(settings, 'antecedencia_mensal_dias', 7) if settings else 7
+        freq = getattr(settings, 'frequencia_mensal_dias', 3) if settings else 3
+        proximo = agora + timedelta(days=freq)
+        if proximo < nr:
+            obligation.next_reminder_at = proximo
+        else:
+            nr = _next_month_date(nr)
+            obligation.next_recurrence_at = nr
+            obligation.next_reminder_at = nr - timedelta(days=ant)
+    elif 'Periódica - Anual' in rec:
+        ant = getattr(settings, 'antecedencia_anual_dias', 30) if settings else 30
+        freq = getattr(settings, 'frequencia_anual_dias', 7) if settings else 7
+        proximo = agora + timedelta(days=freq)
+        if proximo < nr:
+            obligation.next_reminder_at = proximo
+        else:
+            nr = nr.replace(year=nr.year + 1)
+            obligation.next_recurrence_at = nr
+            obligation.next_reminder_at = nr - timedelta(days=ant)
 
 
 def rodar_lembretes_email(db: Session) -> int:
@@ -30,9 +62,14 @@ def rodar_lembretes_email(db: Session) -> int:
 
     obligations = (
         db.query(Obligation)
-        .filter(Obligation.email_enabled == True)  # noqa: E712
+        .filter(
+            Obligation.email_enabled == True,  # noqa: E712
+            ~Obligation.recurrence.ilike('contín%'),
+        )
         .all()
     )
+
+    settings = None
 
     for obligation in obligations:
         if not should_send_now(obligation, now=agora):
@@ -42,8 +79,10 @@ def rodar_lembretes_email(db: Session) -> int:
         if not destinatario:
             continue
 
-        assunto = montar_assunto(obligation)
-        mensagem = montar_mensagem(obligation)
+        if settings is None:
+            settings = db.query(AppSettings).filter(AppSettings.id == 1).first()
+        assunto = montar_assunto(obligation, settings)
+        mensagem = montar_mensagem(obligation, settings)
 
         enviar_email(destinatario, assunto, mensagem)
 
@@ -54,14 +93,23 @@ def rodar_lembretes_email(db: Session) -> int:
             obligation.manual_reminder_sent_at = agora
             obligation.manual_reminder_at = None
 
-        obligation.next_recurrence_at = calculate_next_recurrence_at(
-            obligation,
-            reference_datetime=agora + timedelta(seconds=1),
-        )
-        obligation.next_reminder_at = calculate_next_reminder_at(
-            obligation,
-            reference_datetime=agora + timedelta(seconds=1),
-        )
+        rec = obligation.recurrence or ''
+        if settings is None:
+            settings = db.query(AppSettings).filter(AppSettings.id == 1).first()
+        if rec.startswith('Periódica') and obligation.next_recurrence_at and not obligation.recurrence_mode:
+            _advance_periodico_prazo(obligation, settings, agora)
+        elif rec == 'Encerramento da Concessão' and obligation.next_recurrence_at:
+            freq = getattr(settings, 'frequencia_encerramento_dias', 30) if settings else 30
+            obligation.next_reminder_at = agora + timedelta(days=freq)
+        else:
+            obligation.next_recurrence_at = calculate_next_recurrence_at(
+                obligation,
+                reference_datetime=agora + timedelta(seconds=1),
+            )
+            obligation.next_reminder_at = calculate_next_reminder_at(
+                obligation,
+                reference_datetime=agora + timedelta(seconds=1),
+            )
 
         enviados += 1
 
@@ -85,7 +133,7 @@ def rodar_lembretes_continuos(db: Session) -> int:
         .filter(
             Obligation.email_enabled == True,  # noqa: E712
             Obligation.status != "completed",
-            Obligation.recurrence.in_(_RECORRENCIAS_CONTINUAS_LIST),
+            Obligation.recurrence.ilike('contín%'),
         )
         .first()
     ) is not None
@@ -112,7 +160,7 @@ def resetar_obrigacoes_continuas(db: Session) -> int:
         db.query(Obligation)
         .filter(
             Obligation.status == "completed",
-            Obligation.recurrence.in_(_RECORRENCIAS_CONTINUAS_LIST),
+            Obligation.recurrence.ilike('contín%'),
         )
         .all()
     )

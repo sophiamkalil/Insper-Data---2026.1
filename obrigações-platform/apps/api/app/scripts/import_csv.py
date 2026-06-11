@@ -53,7 +53,7 @@ def _v(row: dict, key: str) -> str | None:
 def import_csv(csv_path: str) -> None:
     db = SessionLocal()
     try:
-        with open(csv_path, encoding="latin-1", newline="") as f:
+        with open(csv_path, encoding="cp1252", newline="") as f:
             reader = csv.DictReader(f, delimiter=";")
             rows = list(reader)
 

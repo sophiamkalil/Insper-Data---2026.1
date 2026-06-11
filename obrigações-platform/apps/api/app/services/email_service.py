@@ -1,5 +1,6 @@
 import os
 import smtplib
+from email.header import Header
 from email.mime.text import MIMEText
 
 from dotenv import load_dotenv
@@ -14,8 +15,8 @@ def enviar_email(destinatario: str, assunto: str, mensagem: str) -> None:
     if not senha:
         raise RuntimeError("EMAIL_SENHA não definido nas variáveis de ambiente.")
 
-    msg = MIMEText(mensagem)
-    msg["Subject"] = assunto
+    msg = MIMEText(mensagem, 'plain', 'utf-8')
+    msg["Subject"] = Header(assunto, 'utf-8')
     msg["From"] = remetente
     msg["To"] = destinatario
 
