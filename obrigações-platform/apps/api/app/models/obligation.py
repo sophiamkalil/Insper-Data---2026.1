@@ -80,6 +80,8 @@ class Obligation(Base):
     expected_output = Column(Text, nullable=True)
     interpretive_notes = Column(Text, nullable=True)
 
+    pagina_contrato = Column(Integer, nullable=True)
+
     created_at = Column(
         DateTime,
         server_default=func.now(),
@@ -102,3 +104,25 @@ class Obligation(Base):
         back_populates="obligation",
         cascade="all, delete-orphan",
     )
+
+    dependency_entries = relationship(
+        "ObligationDependency",
+        foreign_keys="[ObligationDependency.eventual_id]",
+        backref="eventual_obligation",
+        lazy="select",
+    )
+
+    condition_for_entries = relationship(
+        "ObligationDependency",
+        foreign_keys="[ObligationDependency.condition_id]",
+        backref="condition_obligation",
+        lazy="select",
+    )
+
+    @property
+    def has_dependency(self) -> bool:
+        return len(self.dependency_entries) > 0
+
+    @property
+    def is_condition_for_count(self) -> int:
+        return len(self.condition_for_entries)

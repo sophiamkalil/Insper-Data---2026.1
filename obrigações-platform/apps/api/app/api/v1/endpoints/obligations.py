@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.models.obligation import Obligation
+from app.models.obligation_dependency import ObligationDependency
 from app.schemas.obligation import (
     ObligationCreateRequest,
     ObligationListResponse,
@@ -50,8 +51,10 @@ def list_obligations(
     q: str | None = None,
     status: str | None = None,
     recurrence: str | None = None,
+    responsible: str | None = None,
+    contract_phase: str | None = None,
     skip: int = 0,
-    limit: int = Query(default=15, le=100),
+    limit: int = Query(default=15, le=1000),
 ):
     query = db.query(Obligation)
 
@@ -73,6 +76,20 @@ def list_obligations(
 
     if status and status != "all":
         query = query.filter(Obligation.status == status)
+
+    if responsible:
+        query = query.filter(Obligation.responsible == responsible)
+
+    if contract_phase:
+        _MAPA_FASES = {
+            "Fase I-A":       "Fase I-A%",
+            "Fase I-B":       "Fase I-B%",
+            "Fase II":        "Fase II%",
+            "Encerramento":   "Encerramento%",
+            "Todas as fases": "Todas as fases%",
+        }
+        pattern = _MAPA_FASES.get(contract_phase, f"{contract_phase}%")
+        query = query.filter(Obligation.contract_phase.ilike(pattern))
 
     if recurrence:
         _MAPA_RECORRENCIA = {
@@ -142,6 +159,7 @@ def create_obligation(
         condition_raw=payload.condition_raw,
         condition_canonical=payload.condition_canonical,
         condition_status=payload.condition_status,
+        contract_phase=payload.contract_phase,
     )
 
     obligation.next_recurrence_at = calculate_next_recurrence_at(
@@ -156,5 +174,14 @@ def create_obligation(
     db.add(obligation)
     db.commit()
     db.refresh(obligation)
+
+    if payload.condition_obligation_id:
+        dep = ObligationDependency(
+            eventual_id=obligation.id,
+            condition_id=payload.condition_obligation_id,
+        )
+        db.add(dep)
+        db.commit()
+        db.refresh(obligation)
 
     return obligation

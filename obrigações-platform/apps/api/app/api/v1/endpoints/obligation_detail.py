@@ -6,8 +6,14 @@ from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.models.obligation import Obligation
+from app.models.obligation_dependency import ObligationDependency
 from app.models.status_history import ObligationStatusHistory
-from app.schemas.obligation import ObligationDetailResponse, ObligationUpdateRequest
+from app.models.settings import AppSettings
+from app.schemas.obligation import (
+    ObligationDetailResponse,
+    ObligationUpdateRequest,
+    ObligationUpdateResponse,
+)
 from app.services.email_service import enviar_email
 from app.services.recurrence import (
     calculate_next_recurrence_at,
@@ -59,6 +65,69 @@ def _validar_email_para_lembrete(
         )
 
 
+def _ativar_eventuais_dependentes(
+    condition_obligation: Obligation,
+    db: Session,
+) -> list[Obligation]:
+    """Ativa eventuais que dependiam desta obrigação e retorna as ativadas."""
+    deps = (
+        db.query(ObligationDependency)
+        .filter(ObligationDependency.condition_id == condition_obligation.id)
+        .all()
+    )
+    ativadas = []
+    for dep in deps:
+        eventual = db.query(Obligation).filter(Obligation.id == dep.eventual_id).first()
+        if eventual and (eventual.condition_status or "").lower() != "cumprida":
+            eventual.condition_status = "cumprida"
+            db.add(eventual)
+            ativadas.append(eventual)
+    return ativadas
+
+
+def _enviar_email_ativacao(
+    condition_obr: Obligation,
+    ativadas: list[Obligation],
+    email_escritorio: str,
+) -> None:
+    label = condition_obr.obligation_code or f"ID {condition_obr.id}"
+    linhas = "\n".join(
+        f"- {o.obligation_code or 'ID ' + str(o.id)}: {(o.obligation_text or '')[:80]}"
+        for o in ativadas
+    )
+    assunto = f"Obrigacoes eventuais ativadas -- {label}"
+    mensagem = (
+        f"A conclusao da obrigacao {label} "
+        f"({(condition_obr.obligation_text or '')[:80]}) "
+        f"ativou as seguintes obrigacoes eventuais:\n\n"
+        f"{linhas}\n\n"
+        "Acesse o painel para gerencia-las."
+    )
+    enviar_email(email_escritorio, assunto, mensagem)
+
+
+@router.get("/{obligation_id}/dependents")
+def get_dependents(obligation_id: int, db: Session = Depends(get_db)):
+    """Retorna eventuais que dependem desta obrigação."""
+    deps = (
+        db.query(ObligationDependency)
+        .filter(ObligationDependency.condition_id == obligation_id)
+        .all()
+    )
+    eventuais = []
+    for dep in deps:
+        o = db.query(Obligation).filter(Obligation.id == dep.eventual_id).first()
+        if o:
+            eventuais.append({
+                "id": o.id,
+                "obligation_code": o.obligation_code,
+                "obligation_text": o.obligation_text,
+                "condition_status": o.condition_status,
+                "status": o.status,
+            })
+    return {"dependents": eventuais}
+
+
 @router.get("/{obligation_id}", response_model=ObligationDetailResponse)
 def get_obligation(obligation_id: int, db: Session = Depends(get_db)):
     obligation = db.query(Obligation).filter(Obligation.id == obligation_id).first()
@@ -79,7 +148,7 @@ def get_obligation(obligation_id: int, db: Session = Depends(get_db)):
     }
 
 
-@router.patch("/{obligation_id}", response_model=ObligationDetailResponse)
+@router.patch("/{obligation_id}", response_model=ObligationUpdateResponse)
 def update_obligation(
     obligation_id: int,
     payload: ObligationUpdateRequest,
@@ -134,7 +203,7 @@ def update_obligation(
     if payload.email_destino is not None:
         obligation.email_destino = payload.email_destino
 
-    if payload.manual_reminder_at is not None:
+    if 'manual_reminder_at' in payload.model_fields_set:
         obligation.manual_reminder_at = payload.manual_reminder_at
 
     if payload.recurrence_mode is not None:
@@ -143,7 +212,7 @@ def update_obligation(
     if payload.recurrence_time is not None:
         obligation.recurrence_time = payload.recurrence_time
 
-    if payload.recurrence_interval_days is not None:
+    if 'recurrence_interval_days' in payload.model_fields_set:
         obligation.recurrence_interval_days = payload.recurrence_interval_days
 
     if payload.recurrence_weekday is not None:
@@ -170,6 +239,15 @@ def update_obligation(
     if payload.condition_status is not None:
         obligation.condition_status = payload.condition_status
 
+    if payload.contract_phase is not None:
+        obligation.contract_phase = payload.contract_phase
+
+    if 'deadline' in payload.model_fields_set:
+        obligation.deadline = payload.deadline
+
+    if 'pagina_contrato' in payload.model_fields_set:
+        obligation.pagina_contrato = payload.pagina_contrato
+
     obligation.next_recurrence_at = calculate_next_recurrence_at(
         obligation,
         reference_datetime=datetime.now(),
@@ -188,6 +266,19 @@ def update_obligation(
         )
         db.add(history_entry)
 
+    # Ativar eventuais dependentes se esta obrigação foi concluída
+    activated_codes: list[str] = []
+    if status_changed and obligation.status == "completed":
+        ativadas = _ativar_eventuais_dependentes(obligation, db)
+        if ativadas:
+            activated_codes = [o.obligation_code or str(o.id) for o in ativadas]
+            config = db.query(AppSettings).filter(AppSettings.id == 1).first()
+            if config and config.email_escritorio:
+                try:
+                    _enviar_email_ativacao(obligation, ativadas, config.email_escritorio)
+                except Exception:
+                    pass
+
     db.commit()
     db.refresh(obligation)
 
@@ -201,6 +292,7 @@ def update_obligation(
     return {
         "obligation": obligation,
         "history": history,
+        "activated_obligations": activated_codes,
     }
 
 
@@ -245,8 +337,9 @@ def send_email_now(
             "send_at": send_at.isoformat(),
         }
 
-    assunto = montar_assunto(obligation)
-    mensagem = montar_mensagem(obligation)
+    config = db.query(AppSettings).filter(AppSettings.id == 1).first()
+    assunto = montar_assunto(obligation, config)
+    mensagem = montar_mensagem(obligation, config)
 
     enviar_email(obligation.email_destino, assunto, mensagem)
 

@@ -46,6 +46,9 @@ class ObligationRead(BaseModel):
     condition_canonical: str | None = None
     condition_status: str | None = None
 
+    has_dependency: bool = False
+    is_condition_for_count: int = 0
+
     obligation_code: str | None = None
     contract_phase: str | None = None
     trigger_category: str | None = None
@@ -60,6 +63,8 @@ class ObligationRead(BaseModel):
     deadline_text: str | None = None
     expected_output: str | None = None
     interpretive_notes: str | None = None
+
+    pagina_contrato: int | None = None
 
     created_at: datetime
     updated_at: datetime
@@ -94,6 +99,9 @@ class ObligationCreateRequest(BaseModel):
     condition_raw: str | None = None
     condition_canonical: str | None = None
     condition_status: str | None = None
+    condition_obligation_id: int | None = None
+    contract_phase: str | None = None
+    pagina_contrato: int | None = None
 
 
 class ObligationStatusHistoryRead(BaseModel):
@@ -134,6 +142,9 @@ class ObligationUpdateRequest(BaseModel):
     condition_raw: str | None = None
     condition_canonical: str | None = None
     condition_status: str | None = None
+    contract_phase: str | None = None
+    deadline: datetime | None = None
+    pagina_contrato: int | None = None
 
 
 class ObligationListResponse(BaseModel):
@@ -141,3 +152,9 @@ class ObligationListResponse(BaseModel):
     total: int
     skip: int
     limit: int
+
+
+class ObligationUpdateResponse(BaseModel):
+    obligation: ObligationRead
+    history: list[ObligationStatusHistoryRead]
+    activated_obligations: list[str] = []

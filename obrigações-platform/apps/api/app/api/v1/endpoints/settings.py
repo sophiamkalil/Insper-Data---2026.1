@@ -32,4 +32,6 @@ def update_settings(payload: SettingsUpdate, db: Session = Depends(get_db)):
         setattr(row, field, value)
     db.commit()
     db.refresh(row)
+    from app.services.lembretes_prazo import aplicar_lembretes_por_prazo
+    aplicar_lembretes_por_prazo(db)
     return row
