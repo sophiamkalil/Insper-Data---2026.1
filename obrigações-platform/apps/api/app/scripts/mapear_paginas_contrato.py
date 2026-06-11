@@ -26,27 +26,43 @@ DOCUMENTOS_PDF = {
 
 
 def build_clause_index(pdf_path: str) -> dict[str, int]:
-    """Retorna {clausula: primeira_pagina}, ex: {"5.3": 22, "11.6": 45}."""
+    """Retorna {clausula: primeira_pagina}.
+
+    Chaves numéricas: "5.3", "11.6.2"
+    Chaves de artigo: "art:7", "art:10"
+    """
     index: dict[str, int] = {}
-    patterns = [
+    patterns_numeric = [
         r'(?m)^(\d+\.\d+(?:\.\d+)*)\s*[.\s]',
         r'(?m)^\s{1,4}(\d+\.\d+(?:\.\d+)*)\s*[.\s]',
     ]
+    pattern_artigo = r'(?m)^Art(?:igo)?\.?\s{0,2}(\d+)(?:[º°])?(?:\s|$|[,.])'
+
     with pdfplumber.open(pdf_path) as pdf:
         for page_num, page in enumerate(pdf.pages, start=1):
             text = page.extract_text() or ''
-            for pattern in patterns:
+            for pattern in patterns_numeric:
                 for m in re.findall(pattern, text):
                     if m not in index:
                         index[m] = page_num
+            for m in re.findall(pattern_artigo, text):
+                key = f'art:{m}'
+                if key not in index:
+                    index[key] = page_num
     return index
 
 
 def primary_clause(item_number: str) -> str | None:
     if not item_number:
         return None
-    m = re.search(r'\d+\.\d+(?:\.\d+)*', item_number)
+    normalized = re.sub(r'(\d)\s+(\d)', r'\1.\2', item_number)
+    m = re.search(r'\d+\.\d+(?:\.\d+)*', normalized)
     return m.group(0) if m else None
+
+
+def primary_artigo(item_number: str) -> str | None:
+    m = re.search(r'[Aa]rtigo\s+(\d+)', item_number)
+    return f'art:{m.group(1)}' if m else None
 
 
 def fallback_clauses(clausula: str) -> list[str]:
@@ -63,7 +79,9 @@ def processar_documento(doc_name: str, pdf_filename: str, conn: sqlite3.Connecti
 
     print(f'  Lendo PDF: {pdf_path}')
     index = build_clause_index(pdf_path)
-    print(f'  Cláusulas encontradas: {len(index)}')
+    numeric_keys = sum(1 for k in index if not k.startswith('art:'))
+    artigo_keys  = sum(1 for k in index if k.startswith('art:'))
+    print(f'  Cláusulas encontradas: {numeric_keys} numéricas, {artigo_keys} artigos')
 
     cur = conn.cursor()
     obrigacoes = cur.execute(
@@ -76,17 +94,19 @@ def processar_documento(doc_name: str, pdf_filename: str, conn: sqlite3.Connecti
 
     for oid, item_num in obrigacoes:
         clausula = primary_clause(item_num)
-        if not clausula:
-            nao_encontrados += 1
-            nao_encontrados_lista.append(item_num)
-            continue
+        artigo   = primary_artigo(item_num)
 
-        pagina = index.get(clausula)
-        if pagina is None:
-            for fb in fallback_clauses(clausula):
-                pagina = index.get(fb)
-                if pagina:
-                    break
+        pagina = None
+        if clausula:
+            pagina = index.get(clausula)
+            if pagina is None:
+                for fb in fallback_clauses(clausula):
+                    pagina = index.get(fb)
+                    if pagina:
+                        break
+
+        if pagina is None and artigo:
+            pagina = index.get(artigo)
 
         if pagina:
             cur.execute('UPDATE obligations SET pagina_contrato = ? WHERE id = ?', (pagina, oid))
